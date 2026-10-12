@@ -5,3 +5,4 @@
 ## 文章列表
 
 - [为什么 `nohup pnpm dev` 会停在 T 状态:SIGTTIN 与终端前台进程组](posts/2026-10-05-sigttin-nohup-pnpm-dev.md)(配套 Demo:[demo/](demo/))
+- [在 VSCode 里并存的多套 AI Agent:从 ps 输出看 Claude Code 插件、内置 Agents 模式与 Codex app-server](posts/2026-10-12-vscode-claude-code-codex-agent-architecture.md)
