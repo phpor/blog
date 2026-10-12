@@ -146,6 +146,47 @@ codex CLI 自己还会起一个常驻 daemon,监听 unix socket,给多个前端�
 
 也就是说,`ps -ef | grep app-server` 里每一个进程,都是"**同一个 codex 内核 + 不同宿主**"的一个实例;版本还各不相同(0.157.0 / 0.159.2 / ChatGPT 内嵌版)。
 
+## 配置自定义模型:声明式 config.toml vs 环境变量
+
+两个内核对"接入第三方/自建模型"的支持方式差别也很大,这直接影响它们在多宿主场景下的易用性。
+
+**Codex:provider 是一等公民,写在声明式配置文件里。**
+
+`~/.codex/config.toml`(我机器上的真实配置,凭据已脱敏):
+
+```toml
+model = "thudm-glm-5.3-flashx"
+model_provider = "wecode_openai"
+
+[model_providers.wecode_openai]
+name = "wecode_openai"
+base_url = "http://127.0.0.1:3456/v1"
+wire_api = "responses"
+experimental_bearer_token = "***"
+```
+
+关键在于:**所有形态的 codex 默认都读同一个配置文件**——终端 CLI、VSCode Agent Host 拉起的 `codex app-server`、ChatGPT 桌面版内嵌的 codex,启动时都会加载 `~/.codex/config.toml`;宿主有特殊需求时再用 `-c` 参数做命令行覆盖,比如前面 ps 里 VSCode 追加了自己的 `model_providers.vscode-proxy`。所以只要在 config.toml 里声明好 provider,**一处配置,所有宿主里的 codex 都能用上自定义模型**,这正是"内核无头化"带来的红利:配置跟着内核走,不跟着壳走。
+
+**Claude Code:没有 provider 抽象,只能靠环境变量。**
+
+Claude Code 把 Anthropic Messages API 的请求形态写死在内核里,想接自定义模型,只能用一组环境变量把请求"指"到一个 Anthropic 协议兼容的端点上:
+
+```bash
+ANTHROPIC_BASE_URL=http://127.0.0.1:3456
+ANTHROPIC_AUTH_TOKEN=***
+ANTHROPIC_MODEL=thudm-glm-5.3-flashx
+# 以及 ANTHROPIC_DEFAULT_SONNET_MODEL / ANTHROPIC_DEFAULT_OPUS_MODEL 等
+```
+
+这些变量可以放 shell 环境,也可以写进 `settings.json` 的 `env` 块,宿主再通过 `--settings` 参数带给子进程——本文开头 ps 里那个全局 CLI 进程,命令行上就挂着一大坨这样的 env JSON。(顺带一个安全提示:这也意味着 **`ps -ef` 能直接看到进程参数里的 token**,在共享机器上要小心。)
+
+对比很直接:
+
+- codex:声明式、结构化的 provider 概念,`base_url` + `wire_api` 描述一个接入点,配置集中在一个 toml 文件里,可版本化、全宿主共享;
+- claude:本质是"伪装成官方 API 的兼容端点",要求后端严格兼容 Anthropic Messages API,而且变量散落在 shell env、settings.json、启动参数等处,排查时得翻进程参数。
+
+有意思的是,在我这台机器上,两条路最终指向了**同一个本地模型代理**(`127.0.0.1:3456`):codex 是在 config.toml 里声明 provider 接入的,claude 是在 env 块里塞环境变量接入的——同一个目的,两种配置哲学。
+
 ## 总结:同一个模式 —— 无头内核 + 宿主壳
 
 把三组证据放在一起,架构上是同一个思路:
